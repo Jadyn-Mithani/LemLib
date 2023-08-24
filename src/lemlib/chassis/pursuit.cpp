@@ -7,7 +7,8 @@
  * @copyright Copyright (c) 2023
  *
  */
-
+bool thing = false;
+int pointIndex;
 // The implementation below is mostly based off of
 // the document written by Dawgma
 // Here is a link to the original document
@@ -56,7 +57,7 @@ std::vector<std::string> readElement(std::string input, std::string delimiter) {
 std::vector<lemlib::Pose> getData(std::string filePath) {
     std::vector<lemlib::Pose> robotPath;
     std::string line;
-    std::vector<std::string> pointInput;
+    std::vector<std::string> pointInput; 
     std::ifstream file(filePath, std::ios::in);
     lemlib::Pose pathPoint(0, 0, 0);
 
@@ -66,6 +67,7 @@ std::vector<lemlib::Pose> getData(std::string filePath) {
         pathPoint.x = std::stof(pointInput.at(0)); // x position
         pathPoint.y = std::stof(pointInput.at(1)); // y position
         pathPoint.theta = std::stof(pointInput.at(2)); // velocity
+        pathPoint.order = std::stof(pointInput.at(3)); // Point Order
         robotPath.push_back(pathPoint); // save data
     }
 
@@ -216,6 +218,8 @@ void lemlib::Chassis::follow(const char* filePath, int timeout, float lookahead,
         closestPoint = findClosest(pose, path);
         // if the robot is at the end of the path, then stop
         if (path.at(closestPoint).theta == 0) break;
+
+        pointIndex = abs(path.at(closestPoint).function);
 
         // find the lookahead point
         lookaheadPose = lookaheadPoint(lastLookahead, pose, path, lookahead);

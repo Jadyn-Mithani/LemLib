@@ -1,58 +1,232 @@
 #include "main.h"
 #include "lemlib/api.hpp"
+#include <iostream>
 
-// drive motors
-pros::Motor lF(-3, pros::E_MOTOR_GEARSET_06); // left front motor. port 3, reversed
-pros::Motor lM(-14, pros::E_MOTOR_GEARSET_06); // left middle motor. port 14, reversed
-pros::Motor lB(-12, pros::E_MOTOR_GEARSET_06); // left back motor. port 12, reversed
-pros::Motor rF(19, pros::E_MOTOR_GEARSET_06); // right front motor. port 19
-pros::Motor rM(20, pros::E_MOTOR_GEARSET_06); // right middle motor. port 20
-pros::Motor rB(1, pros::E_MOTOR_GEARSET_06); // right back motor. port 1
 
-// motor groups
-pros::MotorGroup leftMotors({lF, lM, lB}); // left motor group
-pros::MotorGroup rightMotors({rF, rM, rB}); // right motor group
+pros::Controller master(pros::E_CONTROLLER_MASTER);
+//Utility Motors
 
-// Inertial Sensor on port 6
-pros::Imu imu(6);
+pros::Motor catapult(19);
+pros::Motor Intake (9);
 
-// tracking wheels
-pros::ADIEncoder verticalEnc('A', 'B', false);
-// vertical tracking wheel. 2.75" diameter, 2.2" offset
-lemlib::TrackingWheel vertical(&verticalEnc, lemlib::Omniwheel::NEW_275, 2.2);
+// drivetrain motors
+pros::Motor lf(-3); 
+pros::Motor lt(14);
+pros::Motor lb(-13);
+pros::Motor rf(7); 
+pros::Motor rt(-6);
+pros::Motor rb(5);
 
-// drivetrain
+//Sensors
+pros::Rotation CataRot(20);
+pros::IMU IMU1(1);
+
+//Drivetrain motor groups
+pros::MotorGroup leftmotors({lf, lt, lb});
+pros::MotorGroup rightmotors({rf, rt, rb});
+
+//Pneumatics
+pros::ADIDigitalOut wings ('H');
+pros::ADIDigitalOut  Intakepneu ('G', true);
+
+ 
 lemlib::Drivetrain_t drivetrain {
-    &leftMotors, &rightMotors, 10, lemlib::Omniwheel::NEW_325, 360,
+    &leftmotors, // left drivetrain motors
+    &rightmotors, // right drivetrain motors
+    11, // track width
+    3.25, // wheel diameter
+    360 // wheel rpm
 };
-
-// lateral motion controller
-lemlib::ChassisController_t lateralController {10, 30, 1, 100, 3, 500, 20};
-
-// angular motion controller
-lemlib::ChassisController_t angularController {2, 10, 1, 100, 3, 500, 3};
-
-// sensors for odometry
-lemlib::OdomSensors_t sensors {nullptr, nullptr, nullptr, nullptr, &imu};
-
+ 
+// left tracking wheel encoder
+// inertial sensor
+//pros::Imu inertial_sensor(2); // port 2
+ 
+// odometry struct
+lemlib::OdomSensors_t sensors {
+    nullptr, // vertical tracking wheel 1
+    nullptr, // vertical tracking wheel 2
+    nullptr, // horizontal tracking wheel 1
+    nullptr, // horizontal tracking wheel 2
+    &IMU1 // inertial sensor
+};
+ 
+// forward/backward PID
+lemlib::ChassisController_t lateralController {
+	8,
+	30,
+	1,
+	100,
+	3,
+	500,
+	200
+};
+ //kp 8 kd 80
+// turning PID
+lemlib::ChassisController_t angularController {
+	11,
+	109.75,
+	1,
+	100,
+	3,
+	500,
+	4
+};
+ 
+ 
+// create the chassis
 lemlib::Chassis chassis(drivetrain, lateralController, angularController, sensors);
-
 /**
  * Runs initialization code. This occurs as soon as the program is started.
  *
  * All other competition modes are blocked by initialize; it is recommended
  * to keep execution time for this mode under a few seconds.
  */
-void initialize() {
-    pros::lcd::initialize();
-    // calibrate sensors
-    chassis.calibrate();
+bool firecata = false;
+bool block = false;
+bool CataSettled;
+bool blockertoggle = false;
+float pos;
+float error;
+
+void IntakeForward(){
+    Intake.move(127);
+}
+
+void IntakeBackward(){
+    Intake.move(-127);
+}
+
+void IntakeStop(){
+    Intake.move(0);
+}
+
+lemlib::FAPID Catapid(0, 0, 13, 0, 30, "CataPID");
+void CataFire(){
+    while(true){
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_R1) && CataSettled == true){
+        firecata = true;
+        pros::delay(70);
+        firecata = false;
+        pros::delay(250);
+        Catapid.reset();
+        CataSettled = false;
+    }
+    pros::delay(10);
+    }
+}
+bool bumpfire = false;
+const float maintargetval = 94;
+const float mainFFVval = 35;
+// kp 8 kd 12 FFV 73
+void CataPID() {
+    Catapid.setExit(2, 0.5, 1000, 200, -1);
+    float target = maintargetval;
+    float FFV = mainFFVval;
+    float finalVoltage;
     while (true) {
-        pros::lcd::print(0, "X: %f", chassis.getPose().x);
-        pros::lcd::print(1, "Y: %f", chassis.getPose().y);
-        pros::lcd::print(2, "Theta: %f", chassis.getPose().theta);
+
+        if (block == true){
+            target = 70;
+        } 
+        else if (blockertoggle == true){
+            target = 0;
+            if (pos < 3){
+            FFV = 0;
+            } else {
+            FFV = mainFFVval;
+        }
+        } else {
+            target = maintargetval;
+            FFV = mainFFVval;
+        }
+
+        pos = (CataRot.get_angle() / 100.0); 
+
+        if (pos > 350) {pos = 0;}
+
+        float output = FFV + Catapid.update(target, pos);
+        error = target - pos;
+
+        pros::lcd::print(0, "CataPos: %f", (pos));
+        pros::lcd::print(1, "Error: %f", (error));
+        pros::lcd::print(2, "Power: %f", finalVoltage);
+        pros::lcd::print(3, "CataTemp: %f", catapult.get_temperature());
+
+        if (block){
+            master.print(1, 1, "CMode: %s", "IntakeHold");
+        } else if (blockertoggle) {
+            master.print(1, 1, "CMode: %s", "Blocker");
+        } else {
+            master.print(1, 1, "CMode %s", "Normal");
+        }
+
+        if (CataSettled == true){
+            pros::lcd::print(4, "Settled: %s", "true");
+        } else {
+             pros::lcd::print(4, "Settled: %s", "false");
+        }
+
+        if (firecata == true || bumpfire == true){
+            finalVoltage = 127;
+        }
+        else if (int(fabs(error)) && CataSettled == false){
+            finalVoltage = output;
+        }
+        else {
+            finalVoltage = 0;
+        }
+
+        if (Catapid.settled() == true){
+            CataSettled = true;
+        }
+
+        if (finalVoltage < 0) {
+            finalVoltage = 0;
+        }
+
+        catapult.move(finalVoltage);
+        
+        master.clear();
         pros::delay(10);
     }
+
+}
+
+void screen() {
+    // loop forever
+    while (true) {
+        lemlib::Pose pose = chassis.getPose(); // get the current position of the robot
+        // pros::lcd::print(5, "x: %f", pose.x); // print the x position
+        // pros::lcd::print(6, "y: %f", pose.y); // print the y position
+        // pros::lcd::print(7, "heading: %f", pose.theta); // print the heading
+
+        pros::delay(10);
+    }
+}
+
+// void DetectFunction() {
+//     while (true){
+
+//         if(pointIndex == ){
+
+//         }
+
+
+
+//     }
+// }
+
+void initialize() {
+    catapult.set_brake_mode(pros::E_MOTOR_BRAKE_BRAKE);
+	chassis.calibrate();
+	chassis.setPose(-12, -60, 270);
+    pros::Task screenTask(screen);
+    pros::lcd::initialize();
+    // calibrate sensors
+    pros::Task CataControl(CataPID);
+    pros::Task CataFireControl(CataFire);
+    pros::Task DetectFunction(DetectFunction);
 }
 
 /**
@@ -84,7 +258,14 @@ void competition_initialize() {}
  * will be stopped. Re-enabling the robot will restart the task, not re-start it
  * from where it left off.
  */
-void autonomous() { chassis.moveTo(20, 0, 4000); }
+void autonomous() {
+    chassis.follow("bruh.txt", 100, 10)
+    IntakeIN();
+    chassis.moveTo(0, -60, 10000);
+
+	//chassis.moveTo(0, -25, 10000);
+    // chassis.turnTo(100, 0, 10000);
+}
 
 /**
  * Runs the operator control code. This function will be started in its own task
@@ -99,4 +280,130 @@ void autonomous() { chassis.moveTo(20, 0, 4000); }
  * operator control task will be stopped. Re-enabling the robot will restart the
  * task, not resume it from where it left off.
  */
-void opcontrol() {}
+void opcontrol() {
+
+    //Set Motor Brake Modes
+    leftmotors.set_brake_modes(pros::E_MOTOR_BRAKE_BRAKE);
+    rightmotors.set_brake_modes(pros::E_MOTOR_BRAKE_BRAKE);
+
+    //Toggle Variables
+    bool toggleBrake = false; // Initialize the toggle variable to false
+    bool toggleIntake = false; // Initialize the toggle variable to false
+    bool intakepos = false; // False is in, true is out
+    bool togglewings = true;
+    bool override = false;
+    //Expo Drive Curve tuning
+    double t = 10.0; // Linear Stick
+    double tt = 15.0; // Angular Stick
+    //Saturation Tuning
+    double SatValue = 0.1;
+    //Deadzone tuning
+    const int deadzone = 3;
+    //Intake Control
+    float speed = 127;
+
+    while (true) {
+
+    //Driver Control 
+    int power = master.get_analog(pros::E_CONTROLLER_ANALOG_LEFT_Y);
+    int turn = master.get_analog(pros::E_CONTROLLER_ANALOG_RIGHT_X);
+
+    //Apply Deadzone
+    if (abs(power) <= deadzone) {
+      power = 0;
+    }
+    if (abs(turn) <= deadzone) {
+      turn = 0;
+    }
+
+    double CurvedPower = std::exp(((std::abs(power)-127)*t)/1270) * power;
+    double CurvedTurn = std::exp(((std::abs(turn)-127)*tt)/1270) * turn;
+
+    double RPower = CurvedPower * (1 - (std::abs(turn) / 127.0) * SatValue);
+
+    float left = (RPower + CurvedTurn);
+    float right = (RPower - CurvedTurn);
+
+    leftmotors.move(left);
+    rightmotors.move(right);
+
+    if (abs(power) + abs(turn) == 0) {
+        leftmotors.brake();
+        rightmotors.brake();
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_R1) && master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L1) && fabs(error) < 10 && int(catapult.get_actual_velocity()) == 0 ) {
+        override = true;
+    }  
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L1)){
+        toggleIntake = !toggleIntake;
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_DOWN)){
+        block = !block;
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L2)){
+        toggleIntake = false;
+    }
+
+    if (block == true){
+        speed = 60;
+    }else{
+        speed = 127;
+    }
+
+    if(override == true || (error < 0 || (CataSettled == true && (fabs(error)) < 5 ))){
+    if (master.get_digital(pros::E_CONTROLLER_DIGITAL_L2)){
+        Intake.move(-127);
+    }
+    else if (toggleIntake == true){
+        Intake.move(speed);
+    }
+    else {
+        if(toggleIntake == true){
+            Intake.move(-127);
+        }
+        else{
+            Intake.move(0);
+        }
+    }
+    }
+    else {
+        Intake.move(0);
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_R2)){
+        togglewings = !togglewings;
+    }
+
+    if (togglewings == true){
+        wings.set_value(false);
+    } else {
+        wings.set_value(true);
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_LEFT)){
+        intakepos = !intakepos;
+    }
+
+    if (intakepos == true){
+        Intakepneu.set_value(true);
+    } else {
+        Intakepneu.set_value(false);
+    }
+
+    if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_RIGHT)){
+        blockertoggle = !blockertoggle;
+    }
+    
+    // if (master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_UP)) {
+    //     bumpfire = !bumpfire;
+    // }  
+
+
+pros::delay(10);
+
+}
+}
