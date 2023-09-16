@@ -64,6 +64,8 @@ typedef struct {
         float largeError;
         float largeErrorTimeout;
         float slew;
+        float kP2;
+        float kD2;
 } ChassisController_t;
 
 /**
@@ -194,7 +196,8 @@ class Chassis {
          * @param maxSpeed the maximum speed the robot can turn at. Default is 200
          * @param log whether the chassis should log the turnTo function. false by default
          */
-        void turnTo(float x, float y, int timeout, bool async = false, bool reversed = false, float maxSpeed = 127,
+
+        void turnTo(float x, float y, int timeout, bool async = false, bool reversed = false, float maxSpeed = 127, bool altPIDs = false,
                     bool log = false);
         /**
          * @brief Move the chassis towards the target pose
@@ -212,6 +215,7 @@ class Chassis {
          * @param chasePower higher values make the robot move faster but causes more overshoot on turns. 0 makes it
          * default to global value
          * @param maxSpeed the maximum speed the robot can move at. 127 at default
+         * @param altpids use alternrate pid values
          * @param log whether the chassis should log the turnTo function. false by default
          */
         void moveTo(float x, float y, float theta, int timeout, bool async = false, bool forwards = true,

@@ -147,15 +147,16 @@ void lemlib::Chassis::waitUntilDist(float dist) {
  * @param async whether the function should be run asynchronously. false by default
  * @param reversed whether the robot should turn to face the point with the back of the robot. false by default
  * @param maxSpeed the maximum speed the robot can turn at. Default is 200
+ * @param altPIDs allows user to use alternate PID values
  * @param log whether the chassis should log the turnTo function. false by default
  */
-void lemlib::Chassis::turnTo(float x, float y, int timeout, bool async, bool reversed, float maxSpeed, bool log) {
+void lemlib::Chassis::turnTo(float x, float y, int timeout, bool async, bool reversed, float maxSpeed, bool altPIDs, bool log) {
     // try to take the mutex
     // if its unsuccessful after 10ms, return
     if (!mutex.take(10)) return;
     // if the function is async, run it in a new task
     if (async) {
-        pros::Task task([&]() { turnTo(x, y, timeout, false, reversed, maxSpeed, log); });
+        pros::Task task([&]() { turnTo(x, y, timeout, false, reversed, maxSpeed, altPIDs ,log); });
         mutex.give();
         pros::delay(10); // delay to give the task time to start
         return;
@@ -167,8 +168,21 @@ void lemlib::Chassis::turnTo(float x, float y, int timeout, bool async, bool rev
     std::uint8_t compState = pros::competition::get_status();
     distTravelled = 0;
 
+
+    float kd;
+    float kp;
+
+    if(altPIDs){
+    kd = angularSettings.kD2;
+    kp = angularSettings.kD2;
+    } else {
+    kd = angularSettings.kD;
+    kp = angularSettings.kD;
+    }
+
     // create a new PID controller
-    FAPID pid = FAPID(0, 0, angularSettings.kP, 0, angularSettings.kD, "angularPID");
+    FAPID pid = FAPID(0, 0, kp, 0, kd, "angularPID");
+
     pid.setExit(angularSettings.largeError, angularSettings.smallError, angularSettings.largeErrorTimeout,
                 angularSettings.smallErrorTimeout, timeout);
 

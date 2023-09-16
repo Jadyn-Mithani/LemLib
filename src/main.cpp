@@ -23,10 +23,10 @@ lemlib::TrackingWheel horizontal(&horizontalEnc, lemlib::Omniwheel::NEW_275, -3.
 lemlib::Drivetrain_t drivetrain {&leftMotors, &rightMotors, 10, lemlib::Omniwheel::NEW_325, 360, 2};
 
 // lateral motion controller
-lemlib::ChassisController_t lateralController {10, 30, 1, 100, 3, 500, 20};
+lemlib::ChassisController_t lateralController {10, 30, 1, 100, 3, 500, 20, 0, 0};
 
 // angular motion controller
-lemlib::ChassisController_t angularController {2, 10, 1, 100, 3, 500, 20};
+lemlib::ChassisController_t angularController {2, 10, 1, 100, 3, 500, 20, 0, 0};
 
 // sensors for odometry
 lemlib::OdomSensors_t sensors {nullptr, nullptr, &horizontal, nullptr, &imu};
